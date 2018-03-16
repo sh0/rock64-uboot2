@@ -342,6 +342,31 @@
 		};
 	};
 
+	efuse: efuse@ff260000 {
+		compatible = "rockchip,rk3328-efuse";
+		reg = <0x0 0xff260000 0x0 0x50>;
+		#address-cells = <1>;
+		#size-cells = <1>;
+		clocks = <&cru SCLK_EFUSE>;
+		clock-names = "pclk_efuse";
+		rockchip,efuse-size = <0x20>;
+
+		/* Data cells */
+		efuse_id: id@7 {
+			reg = <0x07 0x10>;
+		};
+		cpu_leakage: cpu-leakage@17 {
+			reg = <0x17 0x1>;
+		};
+		logic_leakage: logic-leakage@19 {
+			reg = <0x19 0x1>;
+		};
+		efuse_cpu_version: cpu-version@1a {
+			reg = <0x1a 0x1>;
+			bits = <3 3>;
+		};
+	};
+
 	saradc: saradc@ff280000 {
 		compatible = "rockchip,rk3328-saradc", "rockchip,saradc";
 		reg = <0x0 0xff280000 0x0 0x100>;
@@ -354,13 +379,19 @@
 		status = "disabled";
 	};
 
-	dmc: dmc@ff400000 {
+	dmc: dmc {
 		u-boot,dm-pre-reloc;
-		compatible = "rockchip,rk3328-dmc", "syscon";
-		reg = <0x0 0xff400000 0x0 0x1000>;
+		compatible = "rockchip,rk3328-dmc";
+		reg = <0x0 0xff400000 0x0 0x1000
+		       0x0 0xff780000 0x0 0x3000
+		       0x0 0xff100000 0x0 0x1000
+		       0x0 0xff440000 0x0 0x1000
+		       0x0 0xff720000 0x0 0x1000
+		       0x0 0xff798000 0x0 0x1000>;
 	};
 
 	cru: clock-controller@ff440000 {
+		u-boot,dm-pre-reloc;
 		compatible = "rockchip,rk3328-cru", "rockchip,cru", "syscon";
 		reg = <0x0 0xff440000 0x0 0x1000>;
 		rockchip,grf = <&grf>;
@@ -422,6 +453,55 @@
 			<32768>, <32768>;
 	};
 
+	usb2phy_grf: syscon-usb@ff450000 {
+		compatible = "rockchip,rk3328-usb2phy-grf",
+			     "simple-mfd", "syscon";
+		reg = <0x0 0xff450000 0x0 0x10000>;
+		#address-cells = <1>;
+		#size-cells = <1>;
+
+		u2phy: usb2-phy@100 {
+			compatible = "rockchip,rk3328-usb2phy";
+			reg = <0x100 0x10>;
+			clocks = <&xin24m>;
+			clock-names = "phyclk";
+			clock-output-names = "usb480m_phy";
+			#clock-cells = <0>;
+			assigned-clocks = <&cru USB480M>;
+			assigned-clock-parents = <&u2phy>;
+			#phy-cells = <1>;
+			status = "disabled";
+
+			u2phy_otg: otg-port {
+				#phy-cells = <0>;
+				interrupts = <GIC_SPI 59 IRQ_TYPE_LEVEL_HIGH>,
+					     <GIC_SPI 60 IRQ_TYPE_LEVEL_HIGH>,
+					     <GIC_SPI 61 IRQ_TYPE_LEVEL_HIGH>;
+				interrupt-names = "otg-bvalid", "otg-id",
+						  "linestate";
+				status = "disabled";
+			};
+
+			u2phy_host: host-port {
+				#phy-cells = <0>;
+				interrupts = <GIC_SPI 62 IRQ_TYPE_LEVEL_HIGH>;
+				interrupt-names = "linestate";
+				status = "disabled";
+			};
+		};
+	};
+
+	emmc: rksdmmc@ff520000 {
+		compatible = "rockchip,rk3328-dw-mshc", "rockchip,rk3288-dw-mshc";
+		reg = <0x0 0xff520000 0x0 0x4000>;
+		max-frequency = <150000000>;
+		clocks = <&cru HCLK_EMMC>, <&cru SCLK_EMMC>;
+		clock-names = "biu", "ciu";
+		fifo-depth = <0x100>;
+		interrupts = <GIC_SPI 14 IRQ_TYPE_LEVEL_HIGH>;
+		status = "disabled";
+	};
+
 	sdmmc: rksdmmc@ff500000 {
 		compatible = "rockchip,rk3328-dw-mshc", "rockchip,rk3288-dw-mshc";
 		reg = <0x0 0xff500000 0x0 0x4000>;
@@ -445,14 +525,22 @@
 		status = "disabled";
 	};
 
-	emmc: rksdmmc@ff520000 {
-		compatible = "rockchip,rk3328-dw-mshc", "rockchip,rk3288-dw-mshc";
-		reg = <0x0 0xff520000 0x0 0x4000>;
-		max-frequency = <150000000>;
-		clocks = <&cru HCLK_EMMC>, <&cru SCLK_EMMC>;
-		clock-names = "biu", "ciu";
-		fifo-depth = <0x100>;
-		interrupts = <GIC_SPI 14 IRQ_TYPE_LEVEL_HIGH>;
+	gmac2io: ethernet@ff540000 {
+		compatible = "rockchip,rk3328-gmac";
+		reg = <0x0 0xff540000 0x0 0x10000>;
+		rockchip,grf = <&grf>;
+		interrupts = <GIC_SPI 24 IRQ_TYPE_LEVEL_HIGH>;
+		interrupt-names = "macirq";
+		clocks = <&cru SCLK_MAC2IO>, <&cru SCLK_MAC2IO_RX>,
+			 <&cru SCLK_MAC2IO_TX>, <&cru SCLK_MAC2IO_REF>,
+			 <&cru SCLK_MAC2IO_REFOUT>, <&cru ACLK_MAC2IO>,
+			 <&cru PCLK_MAC2IO>;
+		clock-names = "stmmaceth", "mac_clk_rx",
+			      "mac_clk_tx", "clk_mac_ref",
+			      "clk_mac_refout", "aclk_mac",
+			      "pclk_mac";
+		resets = <&cru SRST_GMAC2IO_A>;
+		reset-names = "stmmaceth";
 		status = "disabled";
 	};
 
@@ -479,6 +567,8 @@
 		compatible = "generic-ehci";
 		reg = <0x0 0xff5c0000 0x0 0x10000>;
 		interrupts = <GIC_SPI 16 IRQ_TYPE_LEVEL_HIGH>;
+		phys = <&u2phy 1>;
+		phy-names = "usb";
 		status = "disabled";
 	};
 
@@ -486,6 +576,8 @@
 		compatible = "generic-ohci";
 		reg = <0x0 0xff5d0000 0x0 0x10000>;
 		interrupts = <GIC_SPI 17 IRQ_TYPE_LEVEL_HIGH>;
+		phys = <&u2phy 1>;
+		phy-names = "usb";
 		status = "disabled";
 	};
 
@@ -496,6 +588,8 @@
 		interrupts = <GIC_SPI 23 IRQ_TYPE_LEVEL_HIGH>;
 		hnp-srp-disable;
 		dr_mode = "otg";
+		phys = <&u2phy 0>;
+		phy-names = "usb";
 		status = "disabled";
 	};
 

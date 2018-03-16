@@ -202,7 +202,7 @@
 
 #define CLK_NR_CLKS		(HCLK_HDCP + 1)
 
-#define CLKGRF_NR_CLKS		(SCLK_MAC2PHY + 1)
+#define CLKGRF_NR_CLKS		(0)
 
 /* soft-reset indices */
 #define SRST_CORE0_PO		0

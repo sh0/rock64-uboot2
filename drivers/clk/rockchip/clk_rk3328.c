@@ -12,6 +12,7 @@
 #include <syscon.h>
 #include <asm/arch/clock.h>
 #include <asm/arch/cru_rk3328.h>
+#include <asm/arch/grf_rk3328.h>
 #include <asm/arch/hardware.h>
 #include <asm/arch/grf_rk3328.h>
 #include <asm/io.h>
@@ -522,7 +523,30 @@ static ulong rk3328_pwm_set_clk(struct rk3328_cru *cru, uint hz)
 	rk_clrsetreg(&cru->clksel_con[24],
 		     CLK_PWM_PLL_SEL_MASK | CLK_PWM_DIV_CON_MASK,
 		     CLK_PWM_PLL_SEL_GPLL << CLK_PWM_PLL_SEL_SHIFT |
-		     (div - 1) << CLK_PWM_DIV_CON_SHIFT);
+			 (div - 1) << CLK_PWM_DIV_CON_SHIFT);
+
+	return DIV_TO_RATE(GPLL_HZ, div);
+}
+
+static ulong rk3328_spi_get_clk(struct rk3328_cru *cru)
+{
+	u32 div, con;
+
+	con = readl(&cru->clksel_con[24]);
+	div = (con & CLK_SPI_DIV_CON_MASK) >> CLK_SPI_DIV_CON_SHIFT;
+
+	return DIV_TO_RATE(GPLL_HZ, div);
+}
+
+static ulong rk3328_spi_set_clk(struct rk3328_cru *cru,
+				 ulong clk_id, ulong hz)
+{
+	u32 div = GPLL_HZ / hz;
+
+	rk_clrsetreg(&cru->clksel_con[24],
+		     CLK_PWM_PLL_SEL_MASK | CLK_PWM_DIV_CON_MASK,
+		     CLK_PWM_PLL_SEL_GPLL << CLK_PWM_PLL_SEL_SHIFT |
+			 (div - 1) << CLK_PWM_DIV_CON_SHIFT);
 
 	return DIV_TO_RATE(GPLL_HZ, div);
 }
@@ -552,6 +576,30 @@ static ulong rk3328_saradc_set_clk(struct rk3328_cru *cru, uint hz)
 	return rk3328_saradc_get_clk(cru);
 }
 
+#if CONFIG_IS_ENABLED(GMAC_ROCKCHIP)
+static ulong rk3328_gmac_set_clk(struct rk3328_cru *cru,
+				 ulong clk_id, ulong set_rate)
+{
+	struct rk3328_grf_regs *grf;
+	grf = syscon_get_first_range(ROCKCHIP_SYSCON_GRF);
+
+	switch (clk_id) {
+	case SCLK_MAC2IO:
+		rk_clrsetreg(&grf->mac_con[1], BIT(10), BIT(10));
+		break;
+
+	case SCLK_MAC2IO_EXT:
+		rk_clrsetreg(&grf->soc_con[4], BIT(14), BIT(14));
+		break;
+
+	default:
+		return -EINVAL;
+	}
+
+	return set_rate;
+}
+#endif
+
 static ulong rk3328_clk_get_rate(struct clk *clk)
 {
 	struct rk3328_clk_priv *priv = dev_get_priv(clk->dev);
@@ -577,6 +625,9 @@ static ulong rk3328_clk_get_rate(struct clk *clk)
 		break;
 	case SCLK_SARADC:
 		rate = rk3328_saradc_get_clk(priv->cru);
+		break;
+	case SCLK_SPI:
+		rate = rk3328_spi_get_clk(priv->cru);
 		break;
 	default:
 		return -ENOENT;
@@ -605,8 +656,8 @@ static ulong rk3328_clk_set_rate(struct clk *clk, ulong rate)
 	case SCLK_I2C3:
 		ret = rk3328_i2c_set_clk(priv->cru, clk->id, rate);
 		break;
-	case SCLK_MAC2IO:
-		ret = rk3328_gmac2io_set_clk(priv->cru, rate);
+	case SCLK_SPI:
+		ret = rk3328_spi_set_clk(priv->cru, clk->id, rate);
 		break;
 	case SCLK_PWM:
 		ret = rk3328_pwm_set_clk(priv->cru, rate);
@@ -647,6 +698,12 @@ static ulong rk3328_clk_set_rate(struct clk *clk, ulong rate)
 	case PCLK_GMAC:
 	case SCLK_USB3OTG_SUSPEND:
 		return 0;
+#if CONFIG_IS_ENABLED(GMAC_ROCKCHIP)
+	case SCLK_MAC2IO:
+	case SCLK_MAC2IO_EXT:
+		ret = rk3328_gmac_set_clk(priv->cru, clk->id, rate);
+		break;
+#endif
 	default:
 		return -ENOENT;
 	}
